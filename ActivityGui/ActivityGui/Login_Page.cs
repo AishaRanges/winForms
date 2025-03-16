@@ -1,83 +1,52 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
+using MySql.Data.MySqlClient;
+using System.Configuration;
+using BCrypt.Net;
+using System.Data.SqlClient;
 
 namespace WindowsFormsApp
 {
     public partial class Login_Page : Form
     {
-        // Mock credentials
-        private const string MockUsername = "admin";
-        private const string MockPassword = "password123";
         private int loginAttempts = 0;
         private const int MaxAttempts = 5;
 
-        // UI Components
         private Label UsernameLbl, PasswordLbl, ResetLinkLbl;
         private TextBox UsernameTxt, PasswordTxt;
         private Button LoginBtn;
 
         public Login_Page()
         {
-            InitializeComponent(); // Required for Windows Forms
-            InitializeCustomComponents(); // Custom UI method
+            InitializeComponent();
+            InitializeCustomComponents();
         }
 
         private void InitializeCustomComponents()
         {
-            // Form Settings
             this.Text = "Login Page";
             this.Size = new Size(350, 250);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
 
-            // Username Label
-            UsernameLbl = new Label
-            {
-                Text = "Username:",
-                Location = new Point(20, 20),
-                AutoSize = true
-            };
+            UsernameLbl = new Label { Text = "Username:", Location = new Point(20, 20), AutoSize = true };
             Controls.Add(UsernameLbl);
 
-            // Username TextBox
-            UsernameTxt = new TextBox
-            {
-                Location = new Point(120, 20),
-                Width = 150
-            };
+            UsernameTxt = new TextBox { Location = new Point(120, 20), Width = 150 };
             Controls.Add(UsernameTxt);
 
-            // Password Label
-            PasswordLbl = new Label
-            {
-                Text = "Password:",
-                Location = new Point(20, 60),
-                AutoSize = true
-            };
+            PasswordLbl = new Label { Text = "Password:", Location = new Point(20, 60), AutoSize = true };
             Controls.Add(PasswordLbl);
 
-            // Password TextBox
-            PasswordTxt = new TextBox
-            {
-                Location = new Point(120, 60),
-                Width = 150,
-                PasswordChar = '*' // Hide password input
-            };
+            PasswordTxt = new TextBox { Location = new Point(120, 60), Width = 150, PasswordChar = '*' };
             Controls.Add(PasswordTxt);
 
-            // Login Button
-            LoginBtn = new Button
-            {
-                Text = "Login",
-                Location = new Point(120, 100),
-                Width = 80
-            };
-            LoginBtn.Click += LoginBtn_Click; // Attach event handler
+            LoginBtn = new Button { Text = "Login", Location = new Point(120, 100), Width = 80 };
+            LoginBtn.Click += LoginBtn_Click;
             Controls.Add(LoginBtn);
 
-            // Reset Password Link (Initially Hidden)
             ResetLinkLbl = new Label
             {
                 Text = "Forgot Password?",
@@ -87,48 +56,83 @@ namespace WindowsFormsApp
                 Visible = false,
                 AutoSize = true
             };
-            ResetLinkLbl.Click += ResetLinkLbl_Click; // Handle click event
+            ResetLinkLbl.Click += ResetLinkLbl_Click;
             Controls.Add(ResetLinkLbl);
         }
 
         private void LoginBtn_Click(object sender, EventArgs e)
         {
-            string username = UsernameTxt.Text;
-            string password = PasswordTxt.Text;
+            string username = UsernameTxt.Text.Trim();
+            string password = PasswordTxt.Text.Trim();
 
             if (loginAttempts >= MaxAttempts)
             {
                 MessageBox.Show("Too many failed attempts! Please reset your password.", "Account Locked", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                ResetLinkLbl.Visible = true; // Show reset password link
+                ResetLinkLbl.Visible = true;
                 return;
             }
 
-            if (username == MockUsername && password == MockPassword)
+            if (AuthenticateUser(username, password))
             {
                 MessageBox.Show("Login successful!", "Welcome", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                // Open Student Form
                 Student_Page studentForm = new Student_Page();
                 studentForm.Show();
-                this.Hide(); // Hide login form
+                this.Hide();
             }
             else
             {
                 loginAttempts++;
 
-                if (username != MockUsername && password != MockPassword)
-                    MessageBox.Show("Both username and password are incorrect!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                else if (username != MockUsername)
-                    MessageBox.Show("Username is incorrect!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                else
-                    MessageBox.Show("Password is incorrect!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
                 if (loginAttempts == MaxAttempts)
                 {
-                    ResetLinkLbl.Visible = true; // Show reset password label after 5 attempts
+                    ResetLinkLbl.Visible = true;
                 }
+
+                MessageBox.Show("Username or password is incorrect!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private bool AuthenticateUser(string username, string password)
+        {
+            string connectionString = ConfigurationManager.ConnectionStrings["MyDatabase"]?.ConnectionString;
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                MessageBox.Show("Database connection string is missing!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            using (MySqlConnection connection = new MySqlConnection(connectionString))
+            {
+                try
+                {
+                    connection.Open();
+                    string query = "SELECT password FROM user WHERE username = @username";
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, connection))
+                    {
+                        cmd.Parameters.AddWithValue("@username", username);
+                        object result = cmd.ExecuteScalar();
+
+                        if (result != null)
+                        {
+                            string storedHash = result.ToString();
+                            return BCrypt.Net.BCrypt.Verify(password, storedHash); // Secure password check
+                        }
+                    }
+                }
+                catch (MySqlException ex)
+                {
+                    MessageBox.Show($"Database Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Unexpected Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            return false;
+        }
+
 
         private void ResetLinkLbl_Click(object sender, EventArgs e)
         {
